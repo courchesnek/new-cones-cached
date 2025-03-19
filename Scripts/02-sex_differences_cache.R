@@ -26,6 +26,9 @@ new_cones <- midden_cones %>%
             new_cones_log = mean(log_cache_size_new, 3, na.rm = TRUE),
             .groups = "drop")
 
+#save
+write.csv(new_cones, "Output/new_cones.csv", row.names = FALSE)
+
 # plot --------------------------------------------------------------------
 #define mast years
 mast_years <- c(2010, 2014, 2019, 2022)
