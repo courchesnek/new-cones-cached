@@ -100,8 +100,8 @@ yearly_cones <- tree_cones %>%
   group_by(Year, Grid) %>% 
   dplyr::summarize(
             num_trees = sum(!is.na(NumNew)),
-            cone_counts = mean(NumNew, na.rm = TRUE),
-            cone_index = mean(log(NumNew + 1), na.rm = TRUE),
+            cone_counts = mean(NumNew, na.rm = TRUE), #average number of new cones per tree for each year and grid
+            cone_index = mean(log(NumNew + 1), na.rm = TRUE), #average logarithm of the number of cones per tree for each year and grid
             total_cones = round(mean(total_cones, na.rm = TRUE), 3)) %>%
   rename(year = Year,
          grid = Grid)
@@ -118,6 +118,15 @@ yearly_cones <- left_join(yearly_cones, yearly_cones_temp, by=c("year" = "year_t
 
 #save
 write.csv(yearly_cones, "Input/yearly_cones.csv", row.names = FALSE)
+
+##save on that is only total cone indices - use cone_index_t
+yearly_cone_index <- yearly_cones %>%
+  group_by(year) %>%
+  summarize(
+    avg_cone_index = mean(cone_index_t, na.rm = TRUE))
+
+#save
+write.csv(yearly_cone_index, "Input/yearly_cone_index.csv", row.names = FALSE)
 
 #merge with midden_cones
 midden_cones <- midden_cones %>%
@@ -161,14 +170,3 @@ ratio_males_to_females <- avg_scaled_cache$mean_scaled_cache[avg_scaled_cache$se
 
 ratio_males_to_females
 #across years (i.e. cone crops) males cache approximately 2.08 times as many new cones as females do. 
-
-
-
-
-
-
-
-
-
-
-
