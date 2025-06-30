@@ -169,4 +169,4 @@ ratio_males_to_females <- avg_scaled_cache$mean_scaled_cache[avg_scaled_cache$se
   avg_scaled_cache$mean_scaled_cache[avg_scaled_cache$sex == "F"]
 
 ratio_males_to_females
-#across years (i.e. cone crops) males cache approximately 2.08 times as many new cones as females do. 
+#across years (i.e. cone crops) males cache approximately 2.30 times as many new cones as females do. 
