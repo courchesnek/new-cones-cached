@@ -12,7 +12,7 @@ con_suppl <- krsp_connect (host = "krsp.cepb5cjvqban.us-east-2.rds.amazonaws.com
                            username = Sys.getenv("krsp_user"),
                            password = Sys.getenv("krsp_password"))
 
-selected_grids <- c("CH", "KL", "SU")
+selected_grids <- c("CH", "KL", "SU", "JO", "BT")
 
 #pull in tables
 ##the supplementary tables are not updated in the annual data cleanup, so squirrel_id values must be updated from the historic_squirrel_ids table
@@ -23,13 +23,13 @@ historic_ids<- tbl(con, "historic_squirrel_ids") %>%
 flastall <- tbl(con, "flastall2") %>% 
   #flastall2 contains juveniles that were not tagged
   #exclusions
-  filter(gr %in% c("SU", "KL", "CH")) %>% 
+  filter(gr %in% c("SU", "KL", "CH", "JO", "BT")) %>% 
   dplyr::select(squirrel_id, sex, byear) %>% 
   collect()
 
 middencones <-tbl(con_suppl, "midden_cones") %>% 
   filter(squirrel_id !="UTS",
-         grid %in% c("SU", "KL", "CH")) %>% #remove UTS squirrels from data
+         grid %in% c("SU", "KL", "CH", "JO", "BT")) %>% #remove UTS squirrels from data
   collect() %>% 
   left_join(historic_ids, by=c("squirrel_id" = "old_squirrel_id")) %>% 
   mutate(squirrel_id = ifelse(is.na(new_squirrel_id), squirrel_id, new_squirrel_id),
