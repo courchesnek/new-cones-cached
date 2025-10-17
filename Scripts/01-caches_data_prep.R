@@ -130,12 +130,12 @@ write.csv(yearly_cone_index, "Input/yearly_cone_index.csv", row.names = FALSE)
 
 #merge with midden_cones
 midden_cones <- midden_cones %>%
-  left_join(yearly_cones %>% dplyr::select(year, grid, total_cones), by = c("year", "grid"))
+  left_join(yearly_cones %>% dplyr::select(year, grid, total_cones_tree = total_cones), by = c("year", "grid"))
 
 # data transformation - since non-normal distribution ---------------------
 ##log transformations - +1 because data contains zeros and cannot do log(0)
 midden_cones$log_cache_size_new <- log(midden_cones$cache_size_new + 1)
-midden_cones$log_total_cones <- log(midden_cones$total_cones + 1)
+midden_cones$log_total_cones_tree <- log(midden_cones$total_cones_tree + 1)
 
 #add year type column -------------------------------------------------------
 ##define mast years
@@ -152,14 +152,14 @@ midden_cones <- midden_cones %>%
 
 #reorder columns
 midden_cones <- midden_cones %>%
-  dplyr::select(year, year_type, grid, squirrel_id, sex, cache_size_new, total_cones, log_cache_size_new, log_total_cones)
+  dplyr::select(year, year_type, grid, squirrel_id, sex, cache_size_total, cache_size_new, total_cones_tree, log_cache_size_new, log_total_cones_tree)
 
 #save
 write.csv(midden_cones, "Input/midden_cones.csv", row.names = FALSE)
 
 # males cache exactly how much more? --------------------------------------
 #scale the cache size by the total cones produced in each year
-midden_cones$scaled_cache_size <- midden_cones$cache_size_new / midden_cones$total_cones
+midden_cones$scaled_cache_size <- midden_cones$cache_size_new / midden_cones$total_cones_tree
 
 avg_scaled_cache <- midden_cones %>%
   group_by(sex) %>%
@@ -170,3 +170,53 @@ ratio_males_to_females <- avg_scaled_cache$mean_scaled_cache[avg_scaled_cache$se
 
 ratio_males_to_females
 #across years (i.e. cone crops) males cache approximately 2.30 times as many new cones as females do. 
+
+# average cache into energetic values -------------------------------------
+##1) Compute yearly mean cache size new by sex --------
+yearly_means <- midden_cones %>%
+  group_by(year, sex) %>%
+  summarise(mean_cache_new = mean(cache_size_new, na.rm = TRUE),
+           .groups = "drop")
+
+##2) Average across years so each year contribues equally ------------
+standardized_means <- yearly_means %>%
+  group_by(sex) %>%
+  summarise(overall_mean = mean(mean_cache_new, na.rm = TRUE), .groups = "drop")
+
+standardized_means
+
+##3) Compute the male:female cache ratio
+sex_ratio <- yearly_means %>%
+  pivot_wider(names_from = sex, values_from = mean_cache_new) %>%
+  mutate(male_female_ratio = M / F) %>%
+  summarise(avg_ratio = mean(male_female_ratio, na.rm = TRUE))
+
+sex_ratio
+#males cache 2.4 times more new cones than females
+
+##4) Convert to energetic values in KJ ------------
+kj_conversion <- 0.65 * 4.184 #KJ per cone, based on numbers from Fletcher et al. 2010 and 1kcal = 4.184 kJ
+
+energy_means <- standardized_means %>%
+  mutate(kJ_equivalent = overall_mean * kj_conversion)
+
+energy_means
+
+#compute energy differences between male and females
+energy_diff <- diff(energy_means$kJ_equivalent)
+names(energy_diff) <- "male_minus_female_kJ"
+energy_diff
+
+# what's the average total cache size across all squirrels? ----------
+avg_total_cache_size <- midden_cones %>%
+  filter(cache_size_total > 1) %>%
+  ungroup() %>%
+  summarise(
+    mean_total_cache = mean(cache_size_total, na.rm = TRUE),
+    median_total_cache = median(cache_size_total, na.rm = TRUE),
+    sd_total_cache = sd(cache_size_total, na.rm = TRUE),
+    min_total_cache = min(cache_size_total, na.rm = TRUE),
+    max_total_cache = max(cache_size_total, na.rm = TRUE),
+    n_records = n())
+
+avg_total_cache_size
