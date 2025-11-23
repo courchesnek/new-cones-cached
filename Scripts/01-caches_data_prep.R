@@ -12,10 +12,9 @@ con_suppl <- krsp_connect (host = "krsp.cepb5cjvqban.us-east-2.rds.amazonaws.com
                            username = Sys.getenv("krsp_user"),
                            password = Sys.getenv("krsp_password"))
 
-selected_grids <- c("CH", "KL", "SU", "JO", "BT")
+selected_grids <- c("CH", "KL", "SU")
 
 #pull in tables
-##the supplementary tables are not updated in the annual data cleanup, so squirrel_id values must be updated from the historic_squirrel_ids table
 historic_ids<- tbl(con, "historic_squirrel_ids") %>% 
   dplyr::select(old_squirrel_id, new_squirrel_id) %>% 
   collect()
@@ -23,23 +22,23 @@ historic_ids<- tbl(con, "historic_squirrel_ids") %>%
 flastall <- tbl(con, "flastall2") %>% 
   #flastall2 contains juveniles that were not tagged
   #exclusions
-  filter(gr %in% c("SU", "KL", "CH", "JO", "BT")) %>% 
+  filter(gr %in% c("SU", "KL", "CH")) %>% 
   dplyr::select(squirrel_id, sex, byear) %>% 
   collect()
 
 middencones <-tbl(con_suppl, "midden_cones") %>% 
   filter(squirrel_id !="UTS",
-         grid %in% c("SU", "KL", "CH", "JO", "BT")) %>% #remove UTS squirrels from data
+         grid %in% c("SU", "KL", "CH")) %>% #remove UTS squirrels from data
   collect() %>% 
   left_join(historic_ids, by=c("squirrel_id" = "old_squirrel_id")) %>% 
   mutate(squirrel_id = ifelse(is.na(new_squirrel_id), squirrel_id, new_squirrel_id),
          date = as.POSIXct(Date, format = '%Y-%m-%d %H:%M:%S'))
 
+# fix squirrel IDs --------------------------------------------------------
 middencones <- middencones %>% 
   mutate(squirrel_id = ifelse(squirrel_id == 19851, 19537, squirrel_id),
          squirrel_id = ifelse(squirrel_id == 19911, 11895, squirrel_id)) %>%
   dplyr::select(-id, -locx, -locy, -taglft, -tagrt, -Date, -obs, -experiment, -date, -new_squirrel_id)
-
 
 # fix missing sex values --------------------------------------------------
 middencones <- middencones %>%
@@ -50,7 +49,6 @@ middencones <- middencones %>%
   mutate(sex = coalesce(na_if(sex,""), sex_flast)) %>%
   dplyr::select(-sex_flast) %>%
   filter(!is.na(sex))
-
 
 # fix no. quads and quad area and remove NAs ---------------------------------------------
 middencones <- middencones %>%
@@ -84,7 +82,7 @@ midden_cones <- middencones %>%
          cache_size_old = (total_old / no_quad) * ((pi * (width / 2) * (length / 2)) / area_quad),
          squirrel_id = as.numeric(as.character(squirrel_id))) %>%  #needed to match variable types. the as.character is needed otherwise the squirrel_ids get recoded as 1...n
   group_by(squirrel_id, year) %>% #this line of code and the one below removes cases where a squirrel owns more than one midden
-  slice(which.max(cache_size_total)) %>% #keeps the midden with more cones
+  slice(which.max(cache_size_total)) %>% #keeps the midden with more cones so one midden per squirrel
   dplyr::select(year, grid, midden, sex, squirrel_id, cache_size_total, cache_size_new, cache_size_old) 
 
 # add in cone crop --------------------------------------------------------
@@ -93,9 +91,10 @@ tree_cones <-tbl(con, "cones") %>%
   collect()  %>%
   mutate(Year = as.numeric(Year), 
          NumNew = as.numeric(NumNew),
-         total_cones = 1.11568 * exp(0.1681 + 1.1891 * log(NumNew + 0.01))) #according to Krebs et al. 2012
+         #convert per-tree new cone counts to total cone production using LaMontagne et al. 2005
+         total_cones = 1.11568 * exp(0.1681 + 1.1891 * log(NumNew + 0.01)))
 
-#mean cones per year
+#summaries for each year x grid
 yearly_cones <- tree_cones %>%
   group_by(Year, Grid) %>% 
   dplyr::summarize(
@@ -106,20 +105,29 @@ yearly_cones <- tree_cones %>%
   rename(year = Year,
          grid = Grid)
 
+#organize cone indices for current year ("t") and previous year ("t-1" = tm1)
 yearly_cones <- yearly_cones %>%
   mutate(cone_index_t = ifelse(is.finite(cone_index), cone_index, NA)) %>%
-  mutate(year_tp1 = year+1)
+  mutate(year_tp1 = year +1 ) #the following year = ("t+1" = tp1)
 
+#create a temporary table that stores each year's cone index (t) but renames it as (t–1)
+#these values will be lagged forward so they attach to the next year
 yearly_cones_temp <- yearly_cones %>%
-  dplyr::select(year, year_tp1, cone_index_tm1=cone_index_t, grid)
+  dplyr::select(year, #current year
+                year_tp1, #next year (t+1)
+                cone_index_tm1=cone_index_t, # # rename current year's index as "t–1" to join to next year
+                grid)
 
+#join previous-year cone index (t–1) onto current year (t)
+#for a row with year == 2010, we join cone_index_tm1 from the row where year == 2009.
+#this ensures each year contains the previous year's cone index
 yearly_cones <- left_join(yearly_cones, yearly_cones_temp, by=c("year" = "year_tp1", "grid"), relationship = "many-to-many") %>%
   dplyr::select(year, grid, num_trees, cone_counts, cone_index_t, cone_index_tm1, total_cones)
 
 #save
 write.csv(yearly_cones, "Input/yearly_cones.csv", row.names = FALSE)
 
-##save on that is only total cone indices - use cone_index_t
+##save one that is only total cone indices - use cone_index_t
 yearly_cone_index <- yearly_cones %>%
   group_by(year) %>%
   summarize(
@@ -157,54 +165,84 @@ midden_cones <- midden_cones %>%
 #save
 write.csv(midden_cones, "Input/midden_cones.csv", row.names = FALSE)
 
-# males cache exactly how much more? --------------------------------------
-#scale the cache size by the total cones produced in each year
-midden_cones$scaled_cache_size <- midden_cones$cache_size_new / midden_cones$total_cones_tree
-
-avg_scaled_cache <- midden_cones %>%
-  group_by(sex) %>%
-  summarise(mean_scaled_cache = mean(scaled_cache_size, na.rm = TRUE))
-
-ratio_males_to_females <- avg_scaled_cache$mean_scaled_cache[avg_scaled_cache$sex == "M"] / 
-  avg_scaled_cache$mean_scaled_cache[avg_scaled_cache$sex == "F"]
-
-ratio_males_to_females
-#across years (i.e. cone crops) males cache approximately 2.30 times as many new cones as females do. 
-
-# average cache into energetic values -------------------------------------
-##1) Compute yearly mean cache size new by sex --------
+# Males cache how many more new cones than females? --------------------------------------
+# Compute yearly male/female mean new cone cached
 yearly_means <- midden_cones %>%
   group_by(year, sex) %>%
   summarise(mean_cache_new = mean(cache_size_new, na.rm = TRUE),
-           .groups = "drop")
+            .groups = "drop")
 
-##2) Average across years so each year contribues equally ------------
-standardized_means <- yearly_means %>%
+#add yearly_cone_index to yearly_means
+yearly_means <- yearly_means %>%
+  left_join(yearly_cone_index, by = "year")
+
+#identify failure years -------------------------------------------------------------------
+trees_per_territory <- 1033 * 0.34 
+trees_per_territory
+
+yearly_cones_territory <- yearly_cones %>%
+  group_by(year) %>%
+  summarise(
+    mean_index   = mean(cone_index_t, na.rm = TRUE),
+    sd_index     = sd(cone_index_t, na.rm = TRUE),
+    mean_cones_tree = mean(total_cones, na.rm = TRUE),   # per tree estimate
+    sd_cones_tree   = sd(total_cones, na.rm = TRUE),
+    n_grids      = n(),
+    # NEW: crude estimate of cones per territory
+    mean_cones_territory = mean(total_cones, na.rm = TRUE) * trees_per_territory,
+    sd_cones_territory   = sd(total_cones, na.rm = TRUE) * trees_per_territory) %>%
+  arrange(year)
+
+yearly_cones_territory
+
+post_mast <- yearly_cones_territory %>%
+  filter(year %in% c(1994, 1999, 2006, 2011, 2015, 2020, 2023))
+#-------------------- FINAL DECISION: remove years when cone index < 0.6 --------------------
+
+#remove failure years
+failure_years <- yearly_cone_index$year[yearly_cone_index$avg_cone_index < 0.6]
+failure_years
+#these years will be removed for ratio and mean calculations
+
+yearly_means_filtered <- yearly_means %>%
+  filter(!(year %in% failure_years))
+
+# Compute year-weighted absolute means per sex (each year contributes equally)
+absolute_means <- yearly_means_filtered %>%
   group_by(sex) %>%
-  summarise(overall_mean = mean(mean_cache_new, na.rm = TRUE), .groups = "drop")
+  summarise(
+    mean_per_year = mean(mean_cache_new, na.rm = TRUE),
+    sd_per_year   = sd(mean_cache_new, na.rm = TRUE),
+    n_years       = n(),
+    se_per_year   = sd_per_year / sqrt(n_years),
+    lower_CI      = mean_per_year - qt(0.975, df = n_years - 1) * se_per_year,
+    upper_CI      = mean_per_year + qt(0.975, df = n_years - 1) * se_per_year,
+    .groups = "drop")
 
-standardized_means
+absolute_means
 
-##3) Compute the male:female cache ratio
-sex_ratio <- yearly_means %>%
+# Compute year-weighted male:female ratio (one ratio per year → average)
+ratio_per_year <- yearly_means_filtered %>%
   pivot_wider(names_from = sex, values_from = mean_cache_new) %>%
-  mutate(male_female_ratio = M / F) %>%
-  summarise(avg_ratio = mean(male_female_ratio, na.rm = TRUE))
+  mutate(MF_ratio = M / F)
 
-sex_ratio
-#males cache 2.4 times more new cones than females
+equal_weight_ratio <- mean(ratio_per_year$MF_ratio, na.rm = TRUE)
+equal_weight_ratio
 
-##4) Convert to energetic values in KJ ------------
-kj_conversion <- 0.65 * 4.184 #KJ per cone, based on numbers from Fletcher et al. 2010 and 1kcal = 4.184 kJ
+# Energetic conversion of cache difference --------------------------------
+#convert per-sex yearly means into energetic equivalents
+#based on numbers from Fletcher et al. 2010 and 1kcal = 4.184 kJ
+kj_conversion <- 0.65 * 4.184   # 1 cone = 0.65 kcal = 2.7196 kJ
 
-energy_means <- standardized_means %>%
-  mutate(kJ_equivalent = overall_mean * kj_conversion)
+energy_means <- absolute_means %>%
+  mutate(kJ_equivalent = mean_per_year * kj_conversion)
 
 energy_means
 
-#compute energy differences between male and females
-energy_diff <- diff(energy_means$kJ_equivalent)
-names(energy_diff) <- "male_minus_female_kJ"
+#difference: male minus female
+energy_diff <- energy_means$kJ_equivalent[energy_means$sex == "M"] -
+  energy_means$kJ_equivalent[energy_means$sex == "F"]
+
 energy_diff
 
 # what's the average total cache size across all squirrels? ----------

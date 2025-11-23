@@ -20,10 +20,13 @@ cache_summary_log10 <- midden_cones %>%
   ungroup()
 
 #plot summarised raw data --------------
+#source theme
+source("Scripts/00-plot_theme.R")
+
 caching_log <- ggplot(cache_summary_log10, aes(x = year, y = mean, colour = sex, group = sex)) +
-  geom_point(size = 2.5) +
+  geom_point(size = 2.0) +
   geom_line(linewidth = 1.0) +
-  geom_errorbar(aes(ymin = mean - ci, ymax = mean + ci), width = 0.2) +
+  geom_errorbar(aes(ymin = mean - ci, ymax = mean + ci), width = 0.3, linewidth = 0.7) +
   scale_colour_manual(values = c("F" = "#E31A1C", "M" = "#1F78B4"),
                       labels = c("Female", "Male")) +
   scale_x_continuous(
@@ -43,21 +46,12 @@ caching_log <- ggplot(cache_summary_log10, aes(x = year, y = mean, colour = sex,
     x = "Year",
     y = expression("Number of Cones Cached (log"[10]*")"),
     colour = "Sex") +
-  theme_bw() +
-  theme(legend.position = "bottom",
-        panel.grid.major.x = element_line(colour = "grey90", linewidth = 0.5),
-        panel.grid.major.y = element_line(colour = "grey80", linewidth = 0.3),
-        panel.grid.minor.x = element_blank(),
-        panel.grid.minor.y = element_blank(),
-        panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8),
-        legend.title = element_text(size = 16),
-        legend.text = element_text(size = 16),
-        axis.text.x = element_text(size = 14),
-        axis.text.y = element_text(size = 15),
-        axis.title.x = element_text(size = 18, margin = margin(t = 13)),
-        axis.title.y = element_text(size = 18, margin = margin(r = 13, l = 5)),
-        legend.margin = margin(t = -5, b = 10),
-        plot.margin = margin(t = 10, r = 20, b = 0, l = 10))
+  theme_thesis() +
+  theme(
+    legend.position = "bottom",
+    legend.margin = margin(t = -2),
+    panel.grid.major.x = element_line(colour = "grey85", linewidth = 0.6),
+    panel.grid.minor.x = element_blank())
 
 caching_log
 
