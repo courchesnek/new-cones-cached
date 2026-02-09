@@ -144,6 +144,7 @@ midden_cones <- midden_cones %>%
 ##log transformations - +1 because data contains zeros and cannot do log(0)
 midden_cones$log_cache_size_new <- log(midden_cones$cache_size_new + 1)
 midden_cones$log_total_cones_tree <- log(midden_cones$total_cones_tree + 1)
+midden_cones$log_cache_size_old <- log(midden_cones$cache_size_old + 1)
 
 #add year type column -------------------------------------------------------
 ##define mast years
@@ -160,7 +161,7 @@ midden_cones <- midden_cones %>%
 
 #reorder columns
 midden_cones <- midden_cones %>%
-  dplyr::select(year, year_type, grid, squirrel_id, sex, cache_size_total, cache_size_new, total_cones_tree, log_cache_size_new, log_total_cones_tree)
+  dplyr::select(year, year_type, grid, squirrel_id, sex, cache_size_total, cache_size_new, cache_size_old, total_cones_tree, log_cache_size_new, log_cache_size_old, log_total_cones_tree)
 
 #save
 write.csv(midden_cones, "Input/midden_cones.csv", row.names = FALSE)
